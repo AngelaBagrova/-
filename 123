@@ -1,0 +1,211 @@
+Творческое задание
+Реализовать средствами React одностраничное веб-приложение (от англ. SPA, Single Page Application). Макеты страниц студент реализовывает самостоятельно. Использование библиотек компонентов запрещено (например, Material UI или Bootstrap).
+
+Цели творческого задания
+Закрепить знания по проектированию пользовательского интерфейса. Ознакомиться с инструментами для разработки одностраничных веб- приложений.
+
+Задание
+Реализовать приложение для чтения новостей о космических полетах. Для наполнения приложения контентом необходимо использовать REST- API https://api.spaceflightnewsapi.net/v3/documentation, а именно запросы
+/articles .
+
+
+
+
+По другим ссылкам переходить не нужно! Все необходимое находится в вышеприведенном блоке запросов. В творческом задании нужно использовать api.spaceflightnewsapi.net/v3.
+Приложение должно показывать следующие страницы:
+•	/news – страница новостей;
+•	/news/:id – страница отдельной новости;
+•	/about – страница с информацией о приложении и студенте, выполнившего работу.
+ 
+На странице /news должны находиться список новостей и элементы, позволяющие искать и сортировать эти новости. Параметры для поиска: title, summary; параметры для сортировки: publishedAt. Поиск и сортировку новостей необходимо реализовать посредством http-запросов, никакой логики данного функционала в приложении быть не должно.
+На странице /news/:id должны находиться содержимое новости и блок с похожими новостями. Также необходимо добавить ссылку на источник.
+Реализовать обработку ситуации, когда пользователь заходит на несуществующую ссылку (404 – not found). Реализовать перенаправление пользователя с начальной страницы / в /news.
+
+Дополнительное задание
+Реализовать адаптивность макетов страниц под разные размеры экрана .
+ 
+
+
+
+Добавить страницу /bookmarks, которая будет содержать закрепленные пользователем новости. На странице /news/:id реализовать возможность добавления новости в закладки.
+Реализовать пагинацию на страницах /news и /bookmarks.
+ 
+Сначала создаем таблицы sales и invoices в базе данных SQL-сервера, процедуру для добавления записей в таблицу invoices и заполняем таблицу sales несколькими тестовыми записями:
+create table sales(
+  id int primary key identity(1,1), 
+  title varchar(255) null, 
+  amount dec(12,2) not null, 
+  clientId int not null, 
+  date_create datetime DEFAULT (getdate())
+);
+go
+create table invoices(
+id int primary key identity(1,1), 
+idSale int not null REFERENCES sales(id), 
+date_create datetime DEFAULT (getdate())
+);
+go
+create procedure addInvoices 
+(
+  @idSales int
+) as
+begin
+	insert into invoices (idSale)
+	output inserted.*
+	select id from sales where id = @idSales
+end
+go
+insert into sales (title, amount, clientId) values 
+  ('Заказ 1', 100.80, 1),
+  ('Заказ 2', 120.30, 2),
+  ('Заказ 3', 78.11, 1);
+go
+Проверяем на SQL-сервере созданную таблицу и добавленные тестовые данные:
+select * from sales
+Переходим к созданию приложения в файле server.js добавляем код.
+var express = require('express'); // оснастка веб сервера
+var app = express();
+var sql = require('mssql'); // клиент для MS SQL Server
+
+// строка для подключения к базе данных.
+var sqlConfig = {
+    user: 'UserName',
+    password: 'mot de passe',
+    server: 'localhost',
+    database: 'DatabaseName'
+}
+
+// сервер для http://localhost:8081/
+var server = app.listen(8081, function () {
+    var host = server.address().address 
+    var port = server.address().port
+
+    console.log("сервер доступен по url http://%s:%s", host, port)
+});
+После сохранения файла server.js проверим работоспособность сервера и выполнения файла скрипта:
+node server.js
+сервер должен вернуть сообщение о доступности для выполнения запросов, например:
+сервер доступен по url http://localhost:8081
+Добавим в файл server.js код обработки запроса к web-серверу для получения всех данных из таблицы SQL сервера sales.
+app.get('/sales', function (req, res) {
+  sql.connect(sqlConfig, function() {
+      var request = new sql.Request();
+      request.query('select * from sales', function(err, resp) {
+          if(err) console.log(err);
+          res.json(resp.recordset); // результат в формате JSON
+         sql.close(); // закрываем соединение с базой данных
+      });
+  });
+});
+Сохраним файл, перезапустим сервер и проверим запрос в Postman, вернется JSON-объект с данными из таблицы SQL-сервера:
+URL: http://localhost:8081/sales/
+ 
+Усложняем запрос, добавим в обработчик параметр из URL для выборки по таблице invoices только запись с id = 2.
+Передачу значения параметра из URL-запроса реализуем специальным отдельным методом — для исключения проблемы SQL-инъекций.
+app.get('/sales/:id', function (req, res) {
+  sql.connect(sqlConfig, function() {
+      var request = new sql.Request();
+      request.input('input_parameter', sql.Int, Number(req.params.id)) // защита от SQL-инъекций и преобразование к числовому типу
+      .query('select * from sales where id = @input_parameter', function(err, resp) {
+          if(err) console.log(err);
+          res.json(resp.recordset); // результат в формате JSON
+         sql.close(); // закрываем соединение с базой данных
+      });
+  });
+});
+Результат выполнения запроса, возврат отдельной записи из таблицы в формате JSON:
+URL: http://localhost:8081/sales/2
+ 
+В следующем обработчике запроса добавим в таблицу “invoices” запись с новым заказом, для REST это должен быть метод HTTP, тип запроса POST :
+app.post('/sales/:id/invoices', function (req, res) {
+  sql.connect(sqlConfig, function() {
+      var request = new sql.Request();
+      request.input('idSales', sql.Int, Number(req.params.id)) // защита от SQL-инъекций
+             .execute('addInvoices', function(err, resp, returnValue, affected) {
+          if(err) console.log(err);
+          res.json(resp.recordset); // результат в формате JSON
+         sql.close(); // закрываем соединение с базой данных
+      });
+  });
+});
+Для тестирования запросов типа POST требуется установка в браузер дополнения, использования отдельного приложения, например Postman, или же запрос возможно выполнить при помощи curl, используя командную строку:
+curl -X POST http://localhost:8081/sales/1/invoices
+В результате выполнения запроса получаем json с данными о добавленной записи в таблице invoices. При повторном выполнении новый ID и дата добавления записи.
+URL: http://localhost:8081/sales/1/invoices
+ 
+В результате скрипт приложения server.js следующего содержания:
+var express = require('express'); // оснастка веб сервера
+var app = express();
+var sql = require('mssql'); // клиент для MS SQL Server
+
+// строка для подключения к базе данных.
+var sqlConfig = {
+    user: 'UserName',
+    password: 'mot de passe',
+    server: 'localhost',
+    database: 'DatabaseName'
+}
+
+// сервер для http://localhost:8081/
+var server = app.listen(8081, function () {
+    var host = server.address().address 
+    var port = server.address().port
+
+    console.log("сервер доступен по url http://%s:%s", host, port)
+});
+
+app.get('/sales', function (req, res) {
+  sql.connect(sqlConfig, function() {
+      var request = new sql.Request();
+      request.query('select * from sales', function(err, resp) {
+          if(err) console.log(err);
+          res.json(resp.recordset); // результат в формате JSON
+         sql.close(); // закрываем соединение с базой данных
+      });
+  });
+});
+
+app.get('/sales/:id', function (req, res) {
+  sql.connect(sqlConfig, function() {
+      var request = new sql.Request();
+      request.input('input_parameter', sql.Int, Number(req.params.id)) // защита от SQL-инъекций и преобразование к числовому типу
+      .query('select * from sales where id = @input_parameter', function(err, resp) {
+          if(err) console.log(err);
+          res.json(resp.recordset); // результат в формате JSON
+         sql.close(); // закрываем соединение с базой данных
+      });
+  });
+});
+
+app.post('/sales/:id/invoices', function (req, res) {
+  sql.connect(sqlConfig, function() {
+      var request = new sql.Request();
+      request.input('idSales', sql.Int, Number(req.params.id)) // защита от SQL-инъекций
+             .execute('addInvoices', function(err, resp, returnValue, affected) {
+          if(err) console.log(err);
+          res.json(resp.recordset); // результат в формате JSON
+         sql.close(); // закрываем соединение с базой данных
+      });
+  });
+});
+
+
+
+
+
+
+
+Литература
+
+
+1.	https://ru.reactjs.org/docs/getting-started.html
+2.	https://learn.javascript.ru/
+3.	https://metanit.com/web/react/
+4.	https://learn.javascript.ru/fetch
+5.	https://www.youtube.com/watch?v=xJZa2_aldDs
+6.	https://www.youtube.com/watch?v=GNrdg3PzpJQ
+7.	https://learn.javascript.ru/localstorage
+8.	https://metanit.com/web/react/4.4.php
+9.	https://highload.today/kak-ispolzovat-media-zaprosy-v-css/
+10.	https://www.google.ru/
+11.	https://www.spaceflightnewsapi.net/
